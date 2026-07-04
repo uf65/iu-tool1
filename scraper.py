@@ -31,6 +31,8 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
     card_selector = selectors['card']
     load_more_selector = selectors['load_more_button']
     
+    # Warte kurz, bis die ersten Elemente stabil im DOM sind
+    page.wait_for_selector(card_selector, timeout=5000)
     last_card_count = page.locator(card_selector).count()
     status_callback(f"Bisher {last_card_count} Stellenanzeigen auf der Seite geladen. Erweitere Liste...", "info")
     
@@ -63,20 +65,21 @@ def extract_jobs_from_page(page, context, selectors: Dict[str, str], status_call
     scraped_data = []
     card_selector = selectors['card']
     
-    # Sofortige Überprüfung, ob das Ziel-Layout auffindbar ist
+    # 1. Sofortige Validierung der Seitenstruktur
     try:
+        page.wait_for_selector(card_selector, timeout=5000)
         card_count = page.locator(card_selector).count()
         if card_count == 0:
-            status_callback("Keine Job-Karten mit der bekannten Struktur gefunden. Befindest du dich auf der korrekten Unterseite?", "error")
+            status_callback("Keine Job-Karten mit der bekannten Struktur gefunden. Bitte prüfe, ob du auf der korrekten Unterseite bist.", "error")
             return []
-        status_callback(f"Seite erfolgreich identifiziert! {card_count} Job-Karten erkannt.", "info")
+        status_callback(f"Struktur erfolgreich erkannt! {card_count} Job-Karten im Sichtfeld gefunden.", "info")
     except Exception as e:
-        status_callback(f"Fehler bei Seitenprüfung: {e}", "error")
+        status_callback(f"Fehler bei Seitenprüfung (Struktur nicht gefunden): {e}", "error")
         return []
 
-    # Liste vollständig laden
+    # 2. Liste vollständig ausklappen
     total_cards = expand_job_list(page, selectors, status_callback)
-    status_callback(f"Verarbeitung gestartet. Extrahiere Details für {total_cards} Stellen...", "info")
+    status_callback(f"Verarbeitung gestartet. Extrahiere Details für insgesamt {total_cards} Stellen...", "info")
     
     i = 0
     while i < total_cards:
@@ -85,14 +88,12 @@ def extract_jobs_from_page(page, context, selectors: Dict[str, str], status_call
             break
             
         try:
-            # Setze ein hartes Zeitlimit pro Karte, um endloses Hängen zu verhindern
-            page.set_default_timeout(15000)
-            
+            page.set_default_timeout(10000)
             cards = page.locator(card_selector)
             current_count = cards.count()
             
             if current_count <= i:
-                status_callback(f"Liste komprimiert (nur noch {current_count} Karten). Re-expandiere auf Index {i+1}...", "warning")
+                status_callback(f"Liste komprimiert (nur noch {current_count} Karten sichtbar). Re-expandiere auf Index {i+1}...", "warning")
                 expand_job_list(page, selectors, status_callback)
                 cards = page.locator(card_selector)
                 if cards.count() <= i:
@@ -103,14 +104,14 @@ def extract_jobs_from_page(page, context, selectors: Dict[str, str], status_call
             card = cards.nth(i)
             card.scroll_into_view_if_needed()
             
-            # Basis-Daten auslesen
+            # Basis-Daten auslesen mit den neuen fehlertoleranten Selektoren
             title = get_text_safe(card, selectors['title']) or "Unbekannter Titel"
-            location = get_text_safe(card, selectors['location'])
-            campus = get_text_safe(card, selectors['campus'])
-            start_date = get_text_safe(card, selectors['start_date'])
+            location = get_text_safe(card, selectors['location']) or "Nicht angegeben"
+            campus = get_text_safe(card, selectors['campus']) or "Nicht angegeben"
+            start_date = get_text_safe(card, selectors['start_date']) or "Nicht angegeben"
             
-            # Sofortiges Feedback für jede ausgelesene Karte im UI
-            status_callback(f"[Karte {i + 1}/{total_cards}] Lese aus: '{title}' in {location or 'Unbekannter Ort'}", "info")
+            # Live-Meldung für den Nutzer im Streamlit UI
+            status_callback(f"[Karte {i + 1}/{total_cards}] Lese erfolgreich aus: '{title}'", "info")
             
             # Detailseiten-Extraktion (Klick)
             about, offer, reqs = "", "", ""
@@ -125,7 +126,7 @@ def extract_jobs_from_page(page, context, selectors: Dict[str, str], status_call
                 reqs = get_text_safe(new_page, selectors['detail_reqs'])
                 new_page.close()
             except PlaywrightTimeoutError:
-                # Fallback für In-Place-Navigation
+                # Fallback für In-Place-Navigation im selben Tab
                 page.wait_for_load_state("domcontentloaded")
                 page.wait_for_timeout(1000)
                 
@@ -152,7 +153,7 @@ def extract_jobs_from_page(page, context, selectors: Dict[str, str], status_call
             })
             
         except Exception as e:
-            status_callback(f"Fehler bei Karte {i + 1} ('{title}'): {e}", "error")
+            status_callback(f"Fehler bei Karte {i + 1}: {e}", "error")
             
         i += 1
         

@@ -58,11 +58,10 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 CONFIG_FILE = "config.json"
 CSV_FILE = "jobs.csv"
 
-# Session-State für Browser-Steuerung initialisieren
 if "scraper_context" not in st.session_state:
     st.session_state.scraper_context = None
 if "step" not in st.session_state:
-    st.session_state.step = "ready" # ready -> waiting_for_login -> scraping
+    st.session_state.step = "ready"
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -71,14 +70,15 @@ def load_config():
                 return json.load(f)
         except Exception:
             pass
+    # Präzise auf das HTML-Bildschirmfoto abgestimmte Selektoren
     return {
         "url": "https://portal.iu.org",
         "selectors": {
-            "card": "xpath=//div[contains(@class, 'flex-1') and .//p[text()='Praxisort']]",
-            "title": "p.text-xl",
-            "location": "xpath=.//p[text()='Praxisort']/parent::div/following-sibling::p[1]",
-            "campus": "xpath=.//p[text()='Campus']/parent::div/following-sibling::p[1]",
-            "start_date": "xpath=.//p[text()='Studienstart']/parent::div/following-sibling::p[1]",
+            "card": "css=div.relative.cursor-pointer",
+            "title": "css=p.text-xl",
+            "location": "xpath=.//p[contains(text(), 'Praxisort')]/parent::div/following-sibling::p",
+            "campus": "xpath=.//p[contains(text(), 'Campus')]/parent::div/following-sibling::p",
+            "start_date": "xpath=.//p[contains(text(), 'Studienstart')]/parent::div/following-sibling::p",
             "detail_about": "xpath=//h3[contains(text(), 'Über die Stelle')]/following-sibling::div[1] | xpath=//div[contains(., 'Über die Stelle')]/following-sibling::div[1]",
             "detail_offer": "xpath=//h3[contains(text(), 'Das bieten wir')]/following-sibling::div[1] | xpath=//div[contains(., 'Das bieten wir')]/following-sibling::div[1]",
             "detail_reqs": "xpath=//h3[contains(text(), 'Das bringst du mit')]/following-sibling::div[1] | xpath=//div[contains(., 'Das bringst du mit')]/following-sibling::div[1]",
@@ -90,7 +90,6 @@ def load_config():
 config = load_config()
 df_jobs = load_jobs_csv(CSV_FILE)
 
-# Main UI
 st.markdown('<div class="main-title">IU Job Scraper Tool</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Automatisiertes Auslesen von Stellenanzeigen aus dem IU-Portal</div>', unsafe_allow_html=True)
 
@@ -99,7 +98,6 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.markdown("### 🚀 Steuerung")
     
-    # SCHRITT 1: Bereit zum Starten
     if st.session_state.step == "ready":
         st.info("""
         **Nächster Schritt:** Klicke auf **Browser öffnen**, logge dich im neuen Fenster ein und gehe zur Jobliste.
@@ -110,15 +108,14 @@ with col1:
                     ctx = init_browser(config.get("url", "https://portal.iu.org"))
                     st.session_state.scraper_context = ctx
                     st.session_state.step = "waiting_for_login"
-                    status.update(label="Browser erfolgreich geöffnet!", state="complete")
+                    status.update(label="Browser erfolgreich geöffnet! Bitte logge dich ein.", state="complete")
                     st.rerun()
                 except Exception as e:
                     status.update(label=f"Fehler beim Starten des Browsers: {e}", state="error")
 
-    # SCHRITT 2: Wartet auf den Login des Nutzers im Browser
     elif st.session_state.step == "waiting_for_login":
         st.warning("""
-        **Aktion erforderlich:** Bitte logge dich jetzt im geöffneten Browser-Fenster ein und wechsle auf die Seite mit den Stellenanzeigen.
+        **Aktion erforderlich:** Bitte logge dich jetzt im geöffneten Browser-Fenster ein und navigiere zur Liste der Stellenanzeigen.
         """)
         
         col_btn1, col_btn2 = st.columns(2)
@@ -137,7 +134,6 @@ with col1:
                 st.session_state.step = "ready"
                 st.rerun()
 
-    # SCHRITT 3: Das eigentliche Scraping läuft
     elif st.session_state.step == "scraping":
         with st.status("Prüfe Webseiten-Struktur und starte Datenextraktion...", expanded=True) as status_box:
             def log_callback(message, level="info"):
@@ -152,7 +148,6 @@ with col1:
                 if not ctx:
                     raise Exception("Browser-Kontext verloren gegangen. Bitte von vorn beginnen.")
                 
-                # Führe das Scraping mit den geladenen Browser-Objekten aus
                 scraped_jobs = extract_jobs_from_page(ctx["page"], ctx["context"], selectors, log_callback)
                 
                 if scraped_jobs:
@@ -161,13 +156,12 @@ with col1:
                     status_box.update(label=f"Scraping erfolgreich! {len(scraped_jobs)} Jobs ausgelesen.", state="complete")
                     st.balloons()
                 else:
-                    status_box.update(label="Scraping beendet. Keine Daten gefunden oder Struktur fehlerhaft.", state="error")
+                    status_box.update(label="Scraping beendet. Keine Daten extrahiert.", state="error")
                     
             except Exception as ex:
                 log_callback(f"Fehler während des Scrapings: {ex}", "error")
                 status_box.update(label="Scraping fehlgeschlagen.", state="error")
             finally:
-                # Browser nach dem Durchlauf immer sauber schließen
                 if st.session_state.scraper_context:
                     try:
                         st.session_state.scraper_context["browser"].close()
@@ -197,7 +191,6 @@ with col2:
 
 st.divider()
 
-# CSV Preview
 st.markdown("### 📂 Daten-Vorschau (CSV)")
 if total_jobs > 0:
     col_f1, col_f2, col_f3 = st.columns(3)
