@@ -3,13 +3,13 @@ import json
 import os
 import pandas as pd
 from data_manager import load_jobs_csv, merge_and_save_jobs
-from scraper import init_browser, extract_jobs_from_page
+from scraper import scrape_jobs
 
 st.set_page_config(
     page_title="IU Job Scraper Tool",
     page_icon="💼",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # Custom premium styling
@@ -58,10 +58,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 CONFIG_FILE = "config.json"
 CSV_FILE = "jobs.csv"
 
-if "scraper_context" not in st.session_state:
-    st.session_state.scraper_context = None
-if "step" not in st.session_state:
-    st.session_state.step = "ready"
+# Ersetze in deiner app.py einfach die Funktion load_config() mit dieser hier:
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -70,12 +67,12 @@ def load_config():
                 return json.load(f)
         except Exception:
             pass
-    # Präzise auf das HTML-Bildschirmfoto abgestimmte Selektoren
+    # Optimierte Schreibweise ohne irritierende Präfixe
     return {
         "url": "https://portal.iu.org",
         "selectors": {
-            "card": "css=div.relative.cursor-pointer",
-            "title": "css=p.text-xl",
+            "card": "div.relative.cursor-pointer",
+            "title": "p.text-xl",
             "location": "xpath=.//p[contains(text(), 'Praxisort')]/parent::div/following-sibling::p",
             "campus": "xpath=.//p[contains(text(), 'Campus')]/parent::div/following-sibling::p",
             "start_date": "xpath=.//p[contains(text(), 'Studienstart')]/parent::div/following-sibling::p",
@@ -87,9 +84,46 @@ def load_config():
         }
     }
 
+def save_config(config_data):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config_data, f, indent=2, ensure_ascii=False)
+
 config = load_config()
 df_jobs = load_jobs_csv(CSV_FILE)
 
+# Sidebar - Settings
+with st.sidebar:
+    st.image("https://www.iu.de/src/images/logos/iu-logo-white.svg", width=100)
+    st.markdown("### ⚙️ Konfiguration")
+    url = st.text_input("Portal URL", value=config.get("url", "https://portal.iu.org"))
+    selectors = config.get("selectors", {})
+    
+    card = st.text_input("Job-Karte (Card)", value=selectors.get("card", ""))
+    title = st.text_input("Titel", value=selectors.get("title", ""))
+    location = st.text_input("Praxisort", value=selectors.get("location", ""))
+    campus = st.text_input("Campus", value=selectors.get("campus", ""))
+    start_date = st.text_input("Studienstart", value=selectors.get("start_date", ""))
+    
+    with st.expander("Details & Navigation"):
+        detail_about = st.text_area("Über die Stelle", value=selectors.get("detail_about", ""))
+        detail_offer = st.text_area("Das bieten wir", value=selectors.get("detail_offer", ""))
+        detail_reqs = st.text_area("Das bringst du mit", value=selectors.get("detail_reqs", ""))
+        back_button = st.text_input("Zurück-Button", value=selectors.get("back_button", ""))
+        load_more_button = st.text_input("'Mehr anzeigen'-Button", value=selectors.get("load_more_button", ""))
+
+    if st.button("Speichern", use_container_width=True):
+        save_config({
+            "url": url,
+            "selectors": {
+                "card": card, "title": title, "location": location, "campus": campus, "start_date": start_date,
+                "detail_about": detail_about, "detail_offer": detail_offer, "detail_reqs": detail_reqs,
+                "back_button": back_button, "load_more_button": load_more_button
+            }
+        })
+        st.success("Konfiguration gespeichert!")
+        st.rerun()
+
+# Main UI
 st.markdown('<div class="main-title">IU Job Scraper Tool</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Automatisiertes Auslesen von Stellenanzeigen aus dem IU-Portal</div>', unsafe_allow_html=True)
 
@@ -97,78 +131,41 @@ col1, col2 = st.columns([2, 1])
 
 with col1:
     st.markdown("### 🚀 Steuerung")
+    st.info("""
+    **Bedienungsanleitung:**
+    1. Klicke unten auf **🔍 Scraping starten**. Ein sichtbares Browserfenster öffnet sich.
+    2. Logge dich im geöffneten Browser ein und wechsle zur Liste der Stellenanzeigen.
+    3. **Kein weiterer Klick nötig:** Sobald das Tool die Stellenanzeigen auf deinem Bildschirm erkennt, startet das Auslesen vollautomatisch.
+    """)
     
-    if st.session_state.step == "ready":
-        st.info("""
-        **Nächster Schritt:** Klicke auf **Browser öffnen**, logge dich im neuen Fenster ein und gehe zur Jobliste.
-        """)
-        if st.button("🌐 1. Browser öffnen & Navigieren", use_container_width=True):
-            with st.status("Starte Browser-Instanz...", expanded=True) as status:
-                try:
-                    ctx = init_browser(config.get("url", "https://portal.iu.org"))
-                    st.session_state.scraper_context = ctx
-                    st.session_state.step = "waiting_for_login"
-                    status.update(label="Browser erfolgreich geöffnet! Bitte logge dich ein.", state="complete")
-                    st.rerun()
-                except Exception as e:
-                    status.update(label=f"Fehler beim Starten des Browsers: {e}", state="error")
-
-    elif st.session_state.step == "waiting_for_login":
-        st.warning("""
-        **Aktion erforderlich:** Bitte logge dich jetzt im geöffneten Browser-Fenster ein und navigiere zur Liste der Stellenanzeigen.
-        """)
+    if st.button("🔍 Scraping starten", use_container_width=True):
+        current_selectors = {
+            "card": card, "title": title, "location": location, "campus": campus, "start_date": start_date,
+            "detail_about": detail_about, "detail_offer": detail_offer, "detail_reqs": detail_reqs,
+            "back_button": back_button, "load_more_button": load_more_button
+        }
         
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("✅ 2. Login erfolgreich – Scraping jetzt starten", type="primary", use_container_width=True):
-                st.session_state.step = "scraping"
-                st.rerun()
-        with col_btn2:
-            if st.button("❌ Abbrechen", use_container_width=True):
-                if st.session_state.scraper_context:
-                    try:
-                        st.session_state.scraper_context["browser"].close()
-                        st.session_state.scraper_context["playwright"].stop()
-                    except: pass
-                st.session_state.scraper_context = None
-                st.session_state.step = "ready"
-                st.rerun()
-
-    elif st.session_state.step == "scraping":
-        with st.status("Prüfe Webseiten-Struktur und starte Datenextraktion...", expanded=True) as status_box:
+        with st.status("Initialisiere Browser...", expanded=True) as status_box:
             def log_callback(message, level="info"):
                 if level == "error": status_box.write(f"❌ {message}")
                 elif level == "warning": status_box.write(f"⚠️ {message}")
                 else: status_box.write(f"ℹ️ {message}")
-            
+                    
             try:
-                ctx = st.session_state.scraper_context
-                selectors = config.get("selectors", {})
-                
-                if not ctx:
-                    raise Exception("Browser-Kontext verloren gegangen. Bitte von vorn beginnen.")
-                
-                scraped_jobs = extract_jobs_from_page(ctx["page"], ctx["context"], selectors, log_callback)
+                scraped_jobs = scrape_jobs(url, current_selectors, log_callback)
                 
                 if scraped_jobs:
-                    log_callback(f"Speichere {len(scraped_jobs)} Stellenanzeigen in `{CSV_FILE}`...", "info")
+                    log_callback(f"Verarbeite und speichere {len(scraped_jobs)} Stellenanzeigen...", "info")
                     df_jobs = merge_and_save_jobs(scraped_jobs, CSV_FILE)
-                    status_box.update(label=f"Scraping erfolgreich! {len(scraped_jobs)} Jobs ausgelesen.", state="complete")
+                    status_box.update(label=f"Scraping erfolgreich! {len(scraped_jobs)} Jobs importiert.", state="complete")
                     st.balloons()
                 else:
-                    status_box.update(label="Scraping beendet. Keine Daten extrahiert.", state="error")
-                    
+                    status_box.update(label="Scraping beendet (keine Daten extrahiert).", state="error")
             except Exception as ex:
-                log_callback(f"Fehler während des Scrapings: {ex}", "error")
+                log_callback(f"Unerwarteter Fehler: {ex}", "error")
                 status_box.update(label="Scraping fehlgeschlagen.", state="error")
-            finally:
-                if st.session_state.scraper_context:
-                    try:
-                        st.session_state.scraper_context["browser"].close()
-                        st.session_state.scraper_context["playwright"].stop()
-                    except: pass
-                st.session_state.scraper_context = None
-                st.session_state.step = "ready"
+                
+        st.rerun()
 
 with col2:
     st.markdown("### 📊 Statistiken")
