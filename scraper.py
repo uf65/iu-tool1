@@ -18,19 +18,18 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
     load_more_selector = selectors['load_more_button']
     
     last_card_count = page.locator(card_selector).count()
-    status_callback(f"Bisher {last_card_count} Stellenanzeigen geladen. Erweitere Liste...", "info")
+    status_callback(f"Bisher {last_card_count} Stellenanzeigen geladen. Suche nach 'mehr anzeigen'...", "info")
     
     no_change_count = 0
     while True:
         try:
             load_more_btn = page.locator(load_more_selector).first
-            if load_more_btn.is_visible(timeout=1500):
+            if load_more_btn.is_visible(timeout=2000):
                 load_more_btn.click(force=True)
-                page.wait_for_timeout(1500)
+                page.wait_for_timeout(2000)
                 
                 current_card_count = page.locator(card_selector).count()
                 if current_card_count > last_card_count:
-                    status_callback(f"Karten geladen: {current_card_count}", "info")
                     last_card_count = current_card_count
                     no_change_count = 0
                 else:
@@ -44,14 +43,15 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
             
     return page.locator(card_selector).count()
 
-# Ersetze in deiner scraper.py die Funktion scrape_jobs mit dieser Version:
-
 def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[str, str], None]) -> List[Dict[str, Any]]:
-    """Launches browser in a single thread, polls for successful login, and extracts jobs."""
+    """
+    Launches browser, verifies the login screen first, then waits for the user 
+    to log in and navigates to the job board.
+    """
     scraped_data = []
     
     with sync_playwright() as p:
-        status_callback("Starte gesteuerten Chromium-Browser...", "info")
+        status_callback("Starte Browser (Chromium)...", "info")
         browser = p.chromium.launch(headless=False)
         context = browser.new_context()
         page = context.new_page()
@@ -59,11 +59,32 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
         status_callback(f"Navigiere zu {url}...", "info")
         page.goto(url)
         
-        card_selector = selectors['card']
-        status_callback("🔑 Bitte logge dich jetzt im Browserfenster ein und gehe zur Stellenliste.", "warning")
+        # --- ZWISCHENSCHRITT: LOGIN-SEITE ERKENNEN ---
+        status_callback("Prüfe Verbindung und warte auf das Laden der Login-Maske...", "info")
         
-        # Sichere Warteschleife innerhalb desselben Threads
+        login_mask_detected = False
+        while not login_mask_detected:
+            if page.is_closed():
+                status_callback("Browser wurde geschlossen. Abbruch.", "error")
+                return []
+                
+            try:
+                # Wir suchen nach der eindeutigen Logo-ID aus deinem HTML
+                logo_visible = page.locator("#prompt-logo-center").is_visible(timeout=500)
+                # Alternativ prüfen wir, ob die auth-URL aktiv ist
+                if logo_visible or "auth.iu.org" in page.url:
+                    login_mask_detected = True
+                    status_callback("✅ Verbindung erfolgreich! Die IU-Login-Maske wurde im Browser erkannt.", "info")
+                    break
+            except Exception:
+                pass
+            time.sleep(1)
+            
+        # --- PHASE 2: JETZT ERST LOGIN AUFFORDERN ---
+        status_callback("🔑 Bitte logge dich JETZT im Browserfenster ein und gehe zur Stellenliste.", "warning")
+        
         logged_in = False
+        card_selector = selectors['card']
         last_log_time = time.time()
         
         while not logged_in:
@@ -72,56 +93,61 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 return []
                 
             try:
-                # Nutzen von .is_visible() mit kurzem Timeout ist massiv robuster als .count()
-                first_card = page.locator(card_selector).first
-                if first_card.is_visible(timeout=500):
-                    card_count = page.locator(card_selector).count()
-                    logged_in = True
-                    status_callback(f"🎉 Login und Seitenstruktur erkannt! {card_count} Karten initial gefunden.", "info")
-                    break
+                current_url = page.url
+                # Stufe A: URL hat auf die Zielseite gewechselt
+                if "/selfmatching" in current_url:
+                    # Stufe B: Prüfen, ob die Karten im DOM existieren (per nativem JS)
+                    elements_found = page.evaluate("() => document.getElementsByClassName('relative cursor-pointer').length")
+                    
+                    if elements_found > 0:
+                        logged_in = True
+                        status_callback(f"🎉 Login erfolgreich! {elements_found} Job-Karten im Portal erkannt.", "info")
+                        break
             except Exception:
                 pass
                 
-            # Alle 5 Sekunden eine Erinnerung ins Streamlit UI schreiben
             if time.time() - last_log_time > 5:
-                status_callback("Warte auf Login und Navigation zur Stellenliste...", "info")
+                status_callback("Warte auf Abschluss des Logins und Navigation zu '/selfmatching'...", "info")
                 last_log_time = time.time()
                 
             time.sleep(1)
             
-        # Liste vollständig expandieren
+        # 2. Liste vollständig expandieren
+        page.wait_for_timeout(1000)
         total_cards = expand_job_list(page, selectors, status_callback)
-        status_callback(f"Starte Detail-Extraktion für alle {total_cards} Stellen...", "info")
+        status_callback(f"Insgesamt {total_cards} Stellenanzeigen geladen. Starte Detail-Scraping...", "info")
         
+        # 3. Iteration durch die Karten
         i = 0
         while i < total_cards:
             if page.is_closed():
-                status_callback("Browser wurde während des Scrapings geschlossen.", "error")
+                status_callback("Browser wurde geschlossen während des Scrapings.", "error")
                 break
                 
+            status_callback(f"Scrape Job {i + 1} von {total_cards}...", "info")
+            
             try:
-                page.set_default_timeout(10000)
                 cards = page.locator(card_selector)
                 current_count = cards.count()
                 
                 if current_count <= i:
-                    status_callback(f"Liste komprimiert. Re-expandiere auf Index {i+1}...", "warning")
+                    status_callback(f"Liste wurde zurückgesetzt. Re-expandiere auf mindestens {i+1}...", "warning")
                     expand_job_list(page, selectors, status_callback)
                     cards = page.locator(card_selector)
-                    if cards.count() <= i:
+                    current_count = cards.count()
+                    if current_count <= i:
                         i += 1
                         continue
                 
                 card = cards.nth(i)
                 card.scroll_into_view_if_needed()
                 
-                title = get_text_safe(card, selectors['title']) or "Unbekannter Titel"
-                location = get_text_safe(card, selectors['location']) or "Nicht angegeben"
-                campus = get_text_safe(card, selectors['campus']) or "Nicht angegeben"
-                start_date = get_text_safe(card, selectors['start_date']) or "Nicht angegeben"
+                title = get_text_safe(card, selectors['title'])
+                location = get_text_safe(card, selectors['location'])
+                campus = get_text_safe(card, selectors['campus'])
+                start_date = get_text_safe(card, selectors['start_date'])
                 
-                # Granulares Live-Feedback für den Nutzer
-                status_callback(f"[Karte {i + 1}/{total_cards}] Lese erfolgreich aus: '{title}'", "info")
+                status_callback(f"Stelle gefunden: '{title}' in {location} ({campus})", "info")
                 
                 about, offer, reqs = "", "", ""
                 try:
@@ -130,9 +156,11 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                     
                     new_page = new_page_info.value
                     new_page.wait_for_load_state()
+                    
                     about = get_text_safe(new_page, selectors['detail_about'])
                     offer = get_text_safe(new_page, selectors['detail_offer'])
                     reqs = get_text_safe(new_page, selectors['detail_reqs'])
+                    
                     new_page.close()
                 except PlaywrightTimeoutError:
                     page.wait_for_load_state("domcontentloaded")
@@ -148,7 +176,7 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                     else:
                         page.go_back()
                         
-                    page.wait_for_selector(card_selector, timeout=5000)
+                    page.wait_for_selector(card_selector, timeout=10000)
                 
                 scraped_data.append({
                     'Titel': title, 'Praxisort': location, 'Campus': campus, 'Studienstart': start_date,
@@ -156,10 +184,11 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 })
                 
             except Exception as e:
-                status_callback(f"Fehler bei Karte {i + 1}: {e}", "error")
+                status_callback(f"Fehler beim Auslesen von Job {i + 1}: {e}", "error")
                 
             i += 1
             
+        status_callback(f"Scraping beendet. {len(scraped_data)} Stellen ausgelesen.", "info")
         browser.close()
         
     return scraped_data

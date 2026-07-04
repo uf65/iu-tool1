@@ -164,6 +164,7 @@ with col1:
             except Exception as ex:
                 log_callback(f"Unerwarteter Fehler: {ex}", "error")
                 status_box.update(label="Scraping fehlgeschlagen.", state="error")
+                st.stop()
                 
         st.rerun()
 
