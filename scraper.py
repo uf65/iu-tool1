@@ -84,7 +84,6 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
         status_callback("🔑 Bitte logge dich JETZT im Browserfenster ein und gehe zur Stellenliste.", "warning")
         
         logged_in = False
-        card_selector = selectors['card']
         last_log_time = time.time()
         
         while not logged_in:
@@ -93,25 +92,33 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 return []
                 
             try:
-                current_url = page.url
-                # Stufe A: URL hat auf die Zielseite gewechselt
-                if "/selfmatching" in current_url:
-                    # Stufe B: Prüfen, ob die Karten im DOM existieren (per nativem JS)
-                    elements_found = page.evaluate("() => document.getElementsByClassName('relative cursor-pointer').length")
-                    
-                    if elements_found > 0:
+                # STRATEGIE-WECHSEL: Wir suchen nach dem Text 'Praxisort', 
+                # der auf JEDER Jobkarte existiert. Das durchbricht auch das Shadow-DOM!
+                target_element = page.locator("p:has-text('Praxisort')").first
+                
+                if target_element.is_visible(timeout=500):
+                    # Sicherheitshalber prüfen wir, ob wir wirklich auf der richtigen URL sind
+                    if "/selfmatching" in page.url:
+                        # Wir ermitteln die Anzahl der sichtbaren Karten über Playwrights internen Selektor
+                        card_count = page.locator(selectors['card']).count()
+                        
+                        # Falls der CSS-Selektor wegen Shadow-DOM 0 liefert, 
+                        # nutzen wir die Text-Locator als Fallback für die Anzahl
+                        if card_count == 0:
+                            card_count = page.locator("p:has-text('Praxisort')").count()
+                            
                         logged_in = True
-                        status_callback(f"🎉 Login erfolgreich! {elements_found} Job-Karten im Portal erkannt.", "info")
+                        status_callback(f"🎉 Login erfolgreich! {card_count} Stellenanzeigen im Portal identifiziert.", "info")
                         break
             except Exception:
                 pass
                 
             if time.time() - last_log_time > 5:
-                status_callback("Warte auf Abschluss des Logins und Navigation zu '/selfmatching'...", "info")
+                status_callback("Warte auf Abschluss des Logins (Suche nach Jobkarten-Inhalten)...", "info")
                 last_log_time = time.time()
                 
             time.sleep(1)
-            
+                        
         # 2. Liste vollständig expandieren
         page.wait_for_timeout(1000)
         total_cards = expand_job_list(page, selectors, status_callback)
