@@ -44,6 +44,8 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
             
     return page.locator(card_selector).count()
 
+# Ersetze in deiner scraper.py die Funktion scrape_jobs mit dieser Version:
+
 def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[str, str], None]) -> List[Dict[str, Any]]:
     """Launches browser in a single thread, polls for successful login, and extracts jobs."""
     scraped_data = []
@@ -70,15 +72,17 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 return []
                 
             try:
-                card_count = page.locator(card_selector).count()
-                if card_count > 0:
+                # Nutzen von .is_visible() mit kurzem Timeout ist massiv robuster als .count()
+                first_card = page.locator(card_selector).first
+                if first_card.is_visible(timeout=500):
+                    card_count = page.locator(card_selector).count()
                     logged_in = True
-                    status_callback(f"🎉 Login und Seitenstruktur erkannt! {card_count} Karten gefunden.", "info")
+                    status_callback(f"🎉 Login und Seitenstruktur erkannt! {card_count} Karten initial gefunden.", "info")
                     break
             except Exception:
                 pass
                 
-            # Alle 5 Sekunden eine Erinnerung ins Streamlit UI schreiben, damit man sieht, dass es lebt
+            # Alle 5 Sekunden eine Erinnerung ins Streamlit UI schreiben
             if time.time() - last_log_time > 5:
                 status_callback("Warte auf Login und Navigation zur Stellenliste...", "info")
                 last_log_time = time.time()
