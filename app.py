@@ -58,8 +58,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 CONFIG_FILE = "config.json"
 CSV_FILE = "jobs.csv"
 
-# Ersetze in deiner app.py einfach die Funktion load_config() mit dieser hier:
-
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -68,7 +66,6 @@ def load_config():
         except Exception:
             pass
     
-    # Vollständig optimierte Selektoren basierend auf dem echten HTML der Detailseite
     return {
         "url": "https://portal.iu.org",
         "selectors": {
@@ -78,17 +75,20 @@ def load_config():
             "campus": "xpath=.//p[contains(text(), 'Campus')]/parent::div/following-sibling::p",
             "start_date": "xpath=.//p[contains(text(), 'Studienstart')]/parent::div/following-sibling::p",
             
-            # Neue robuste Text-Selektoren für die Detail-Sektionen
-            "detail_about": "div:has-text('Über die Stelle') + div",
-            "detail_offer": "div:has-text('Das bieten wir') + div",
-            "detail_reqs": "div:has-text('Das bringst du mit') + div",
+            # 1. Über die Stelle: Sucht den Inhalt direkt unter der Überschrift, stoppt vor "Das bieten wir"
+            "detail_about": "xpath=//div[contains(., 'Über die Stelle')]/following-sibling::div[not(preceding-sibling::div[contains(., 'Das bieten wir')])]",
             
-            # Teiltext-Suche für den Zurück-Button (ignoriert das Sonderzeichen ‹)
+            # 2. Das bieten wir: Isoliert den Inhalt genau zwischen "Das bieten wir" und "Das bringst du mit"
+            "detail_offer": "xpath=//div[contains(., 'Das bieten wir')]/following-sibling::div[not(preceding-sibling::div[contains(., 'Das bringst du mit')])]",
+            
+            # 3. Das bringst du mit: Liest den Inhalt nach dieser Überschrift aus, stoppt vor "Über den Praxispartner"
+            "detail_reqs": "xpath=//div[contains(., 'Das bringst du mit')]/following-sibling::div[not(preceding-sibling::div[contains(., 'Über den Praxispartner')])]",
+            
             "back_button": "text=allen Stellenanzeigen",
             "load_more_button": "text=mehr anzeigen"
         }
     }
-    
+        
 def save_config(config_data):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2, ensure_ascii=False)
