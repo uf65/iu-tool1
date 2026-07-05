@@ -89,8 +89,13 @@ def save_config(config_data):
         json.dump(config_data, f, indent=2, ensure_ascii=False)
 
 config = load_config()
-df_jobs = load_jobs_csv(CSV_FILE)
 
+# Prüfen, ob wir frisch gescrapte Daten im Session-State haben, andernfalls aus CSV laden
+if "jobs_preview" in st.session_state:
+    df_jobs = st.session_state["jobs_preview"]
+else:
+    df_jobs = load_jobs_csv(CSV_FILE)
+    
 # Sidebar - Settings
 with st.sidebar:
     st.image("https://www.iu.de/src/images/logos/iu-logo-white.svg", width=100)
@@ -156,7 +161,12 @@ with col1:
                 
                 if scraped_jobs:
                     log_callback(f"Verarbeite und speichere {len(scraped_jobs)} Stellenanzeigen...", "info")
+                    # Speichern und dem globalen df_jobs zuweisen
                     df_jobs = merge_and_save_jobs(scraped_jobs, CSV_FILE)
+                    
+                    # Im Session-State merken, damit es auch nach Interaktionen erhalten bleibt
+                    st.session_state["jobs_preview"] = df_jobs
+                    
                     status_box.update(label=f"Scraping erfolgreich! {len(scraped_jobs)} Jobs importiert.", state="complete")
                     st.balloons()
                 else:
@@ -164,10 +174,10 @@ with col1:
             except Exception as ex:
                 log_callback(f"Unerwarteter Fehler: {ex}", "error")
                 status_box.update(label="Scraping fehlgeschlagen.", state="error")
-                st.stop()
-                
-        st.rerun()
-
+                # st.stop() ENTFERNT – das blockiert die Streamlit-UI dauerhaft!
+        
+        # KEIN st.rerun() hier! Streamlit läuft automatisch bis zum Ende des Skripts weiter.
+        
 with col2:
     st.markdown("### 📊 Statistiken")
     total_jobs = len(df_jobs)

@@ -134,13 +134,13 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
             status_callback(f"Scrape Job {i + 1} von {total_cards}...", "info")
             
             try:
-                cards = page.locator(card_selector)
+                cards = page.locator(selectors['card'])
                 current_count = cards.count()
                 
                 if current_count <= i:
                     status_callback(f"Liste wurde zurückgesetzt. Re-expandiere auf mindestens {i+1}...", "warning")
                     expand_job_list(page, selectors, status_callback)
-                    cards = page.locator(card_selector)
+                    cards = page.locator(selectors['card'])
                     current_count = cards.count()
                     if current_count <= i:
                         i += 1
@@ -169,21 +169,30 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                     reqs = get_text_safe(new_page, selectors['detail_reqs'])
                     
                     new_page.close()
+
                 except PlaywrightTimeoutError:
+                    # It navigated in the same tab or did an in-place update
+                    # Wait for detail content to load on current page
                     page.wait_for_load_state("domcontentloaded")
-                    page.wait_for_timeout(1000)
+                    page.wait_for_timeout(1000) # extra safety buffer
                     
+                    # Extract detail info
                     about = get_text_safe(page, selectors['detail_about'])
                     offer = get_text_safe(page, selectors['detail_offer'])
                     reqs = get_text_safe(page, selectors['detail_reqs'])
                     
+                    status_callback("Details aus der aktuellen Seite ausgelesen.", "info")
+                    
+                    # Go back
                     back_btn = page.locator(selectors['back_button']).first
                     if back_btn.is_visible(timeout=2000):
                         back_btn.click()
                     else:
+                        status_callback("Zurück-Button nicht sichtbar, nutze Browser-Zurück.", "warning")
                         page.go_back()
                         
-                    page.wait_for_selector(card_selector, timeout=10000)
+                    # KORREKTUR: Hier direkt selectors['card'] statt card_selector nutzen!
+                    page.wait_for_selector(selectors['card'], timeout=10000)
                 
                 scraped_data.append({
                     'Titel': title, 'Praxisort': location, 'Campus': campus, 'Studienstart': start_date,
