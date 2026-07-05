@@ -70,25 +70,28 @@ def load_config():
         "url": "https://portal.iu.org",
         "selectors": {
             "card": "div.relative.cursor-pointer",
-            "title": "p.text-xl",
+            
+            # Der Gewinner-Titel aus dem Labor
+            "title": "xpath=//p[contains(@class, 'text-xl') or contains(@class, 'text-2xl')]",
+            
             "location": "xpath=.//p[contains(text(), 'Praxisort')]/parent::div/following-sibling::p",
             "campus": "xpath=.//p[contains(text(), 'Campus')]/parent::div/following-sibling::p",
             "start_date": "xpath=.//p[contains(text(), 'Studienstart')]/parent::div/following-sibling::p",
             
-            # 1. Über die Stelle: Sucht den Inhalt direkt unter der Überschrift, stoppt vor "Das bieten wir"
-            "detail_about": "xpath=//div[contains(., 'Über die Stelle')]/following-sibling::div[not(preceding-sibling::div[contains(., 'Das bieten wir')])]",
+            # 1. Über die Stelle: Der Parent-Container selbst beinhaltet den gesuchten Text
+            "detail_about": "xpath=//*[contains(., 'Über die Stelle') and not(.//*[contains(., 'Über die Stelle')])]/parent::*",
             
-            # 2. Das bieten wir: Isoliert den Inhalt genau zwischen "Das bieten wir" und "Das bringst du mit"
-            "detail_offer": "xpath=//div[contains(., 'Das bieten wir')]/following-sibling::div[not(preceding-sibling::div[contains(., 'Das bringst du mit')])]",
+            # 2. Das bieten wir: Labor-Gewinner (Taktik 1)
+            "detail_offer": "xpath=//*[contains(., 'Das bieten wir') and not(.//*[contains(., 'Das bieten wir')])]/following-sibling::div[1]",
             
-            # 3. Das bringst du mit: Liest den Inhalt nach dieser Überschrift aus, stoppt vor "Über den Praxispartner"
-            "detail_reqs": "xpath=//div[contains(., 'Das bringst du mit')]/following-sibling::div[not(preceding-sibling::div[contains(., 'Über den Praxispartner')])]",
+            # 3. Das bringst du mit: Labor-Gewinner (Taktik 1)
+            "detail_reqs": "xpath=//*[contains(., 'Das bringst du mit') and not(.//*[contains(., 'Das bringst du mit')])]/following-sibling::div[1]",
             
             "back_button": "text=allen Stellenanzeigen",
             "load_more_button": "text=mehr anzeigen"
         }
     }
-        
+            
 def save_config(config_data):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2, ensure_ascii=False)

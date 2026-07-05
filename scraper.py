@@ -167,6 +167,9 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                     about = get_text_safe(new_page, selectors['detail_about'])
                     offer = get_text_safe(new_page, selectors['detail_offer'])
                     reqs = get_text_safe(new_page, selectors['detail_reqs'])
+                    print("DEBUG about:", about)
+                    print("DEBUG offer:", offer)
+                    print("DEBUG reqs:", reqs)
                     
                     new_page.close()
 
@@ -180,7 +183,9 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                     about = get_text_safe(page, selectors['detail_about'])
                     offer = get_text_safe(page, selectors['detail_offer'])
                     reqs = get_text_safe(page, selectors['detail_reqs'])
-                    
+                    print("DEBUG2 about:", about)
+                    print("DEBUG2 offer:", offer)
+                    print("DEBUG2 reqs:", reqs)
                     status_callback("Details aus der aktuellen Seite ausgelesen.", "info")
                     
                     # Go back
