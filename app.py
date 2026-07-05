@@ -67,7 +67,8 @@ def load_config():
                 return json.load(f)
         except Exception:
             pass
-    # Optimierte Schreibweise ohne irritierende Präfixe
+    
+    # Vollständig optimierte Selektoren basierend auf dem echten HTML der Detailseite
     return {
         "url": "https://portal.iu.org",
         "selectors": {
@@ -76,14 +77,18 @@ def load_config():
             "location": "xpath=.//p[contains(text(), 'Praxisort')]/parent::div/following-sibling::p",
             "campus": "xpath=.//p[contains(text(), 'Campus')]/parent::div/following-sibling::p",
             "start_date": "xpath=.//p[contains(text(), 'Studienstart')]/parent::div/following-sibling::p",
-            "detail_about": "xpath=//h3[contains(text(), 'Über die Stelle')]/following-sibling::div[1] | xpath=//div[contains(., 'Über die Stelle')]/following-sibling::div[1]",
-            "detail_offer": "xpath=//h3[contains(text(), 'Das bieten wir')]/following-sibling::div[1] | xpath=//div[contains(., 'Das bieten wir')]/following-sibling::div[1]",
-            "detail_reqs": "xpath=//h3[contains(text(), 'Das bringst du mit')]/following-sibling::div[1] | xpath=//div[contains(., 'Das bringst du mit')]/following-sibling::div[1]",
-            "back_button": "text=zurück zu den Stellenanzeigen",
+            
+            # Neue robuste Text-Selektoren für die Detail-Sektionen
+            "detail_about": "div:has-text('Über die Stelle') + div",
+            "detail_offer": "div:has-text('Das bieten wir') + div",
+            "detail_reqs": "div:has-text('Das bringst du mit') + div",
+            
+            # Teiltext-Suche für den Zurück-Button (ignoriert das Sonderzeichen ‹)
+            "back_button": "text=allen Stellenanzeigen",
             "load_more_button": "text=mehr anzeigen"
         }
     }
-
+    
 def save_config(config_data):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config_data, f, indent=2, ensure_ascii=False)
