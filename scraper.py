@@ -52,7 +52,7 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
     
     with sync_playwright() as p:
         status_callback("Starte Browser (Chromium)...", "info")
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context()
         page = context.new_page()
         
