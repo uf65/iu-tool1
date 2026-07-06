@@ -1,5 +1,6 @@
 import time
 from typing import List, Dict, Any, Callable
+import playwright
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 import os
@@ -79,7 +80,16 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
     
     with sync_playwright() as p:
         status_callback("Starte Browser (Chromium)...", "info")
-        browser = p.chromium.launch(headless=True)
+        # In scraper.py dort, wo der Browser gestartet wird:
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu"
+            ]
+        )
         context = browser.new_context()
         page = context.new_page()
         
