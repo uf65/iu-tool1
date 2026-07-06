@@ -18,7 +18,7 @@ def ensure_playwright_browsers():
     if os.environ.get("STREAMLIT_SERVER_SHARING_TEXT_ALLOWED") or not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
         try:
             print("⏳ Installiere Playwright Chromium-Browser...")
-            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+            subprocess.run([sys.executable, "-m", "playwright", "install"], check=True)
             print("✅ Playwright Browser erfolgreich installiert!")
         except Exception as e:
             print(f"⚠️ Fehler bei der Browser-Installation: {e}")
