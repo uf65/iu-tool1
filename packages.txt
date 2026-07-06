@@ -9,3 +9,6 @@ libxdamage1
 libxrandr2
 libgbm1
 libasound2
+libxfixes3
+libxrender1
+libxtst6
