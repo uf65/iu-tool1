@@ -79,37 +79,59 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
         status_callback("Starte Browser (Chromium)...", "info")
         
         # 2. Browser über die Instanz 'p' aufrufen, NICHT über das Modul
+        # In scraper.py innerhalb von: with sync_playwright() as p:
+
         browser = p.chromium.launch(
             headless=True,
             args=[
+                # Grundlegende Cloud-Kompatibilität
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",  # Erzwingt die Nutzung von /tmp statt Shared Memory (/dev/shm ist in der Cloud winzig)
-                "--disable-gpu",            # Deaktiviert Hardware-Beschleunigung vollständig
-                "--no-first-run",
-                "--no-zygote",              # Verhindert speicherintensive Hintergrundprozesse
-                "--single-process",         # Spart enorm viel RAM in Cloud-Containern
-                "--disable-extensions"
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                
+                # Speicher & Prozess-Limitierungen für Docker
+                "--single-process",
+                "--no-zygote",
+                "--disable-renderer-backgrounding",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                
+                # Absturzsicherung & Audio/Video-Deaktivierung
+                "--disable-breakpad",  # Verhindert Absturz-Dumps, die den Container blockieren
+                "--disable-ipc-flooding-protection",
+                "--mute-audio",
+                
+                # Erzwinge reines Software-Rendering (wichtig ohne Display-Server)
+                "--use-gl=swiftshader" or "--use-gl=angle",
+                "--disable-software-rasterizer"
             ]
         )
 
-        # Wichtig: Dem Kontext einen gängigen User-Agent mitgeben, 
-        # damit das Portal den Headless-Browser nicht blockiert
+        # Erstelle den Kontext und tarne ihn zwingend als echten Desktop-Browser
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800}
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1440, "height": 900},
+            accept_downloads=False
         )
 
         page = context.new_page()
 
-        # Erhöhe das Timeout für langsame Cloud-Netzwerke auf 60 Sekunden 
-        # und warte auf 'domcontentloaded' statt auf den schweren 'load'-Event (Bilder/Fonts)
+        # Optionale Absicherung: Setze Standard-Timeouts global auf dem Page-Objekt
+        page.set_default_timeout(60000)
+
         try:
             status_callback("Navigiere zu https://portal.iu.org...", "info")
-            page.goto(url, timeout=60000, wait_until="domcontentloaded")
+            
+            # Versuche "networkidle", falls die Seite extrem viel asynchrones JS lädt,
+            # oder bleibe bei "domcontentloaded". Wir fangen Timeouts gezielt ab.
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            
+            # Kurze Atempause, damit JS-Inhalte nach dem Laden rendern können
+            page.wait_for_timeout(3000)
+            
         except Exception as e:
-            # Falls es immer noch crasht, fangen wir es hier sauber ab für das Log
-            raise RuntimeError(f"Fehler beim Laden der Seite: {e}")
+            raise RuntimeError(f"Kritischer Verbindungsfehler auf der Seite: {e}")
         
         # --- ZWISCHENSCHRITT: LOGIN-SEITE ERKENNEN ---
         status_callback("Prüfe Verbindung und warte auf das Laden der Login-Maske...", "info")
