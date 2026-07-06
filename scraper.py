@@ -18,7 +18,7 @@ def ensure_playwright_browsers():
     if os.environ.get("STREAMLIT_SERVER_SHARING_TEXT_ALLOWED") or not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
         try:
             print("⏳ Installiere Playwright Chromium-Browser...")
-            subprocess.run([sys.executable, "-m", "playwright", "install"], check=True)
+            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
             print("✅ Playwright Browser erfolgreich installiert!")
         except Exception as e:
             print(f"⚠️ Fehler bei der Browser-Installation: {e}")
@@ -74,10 +74,12 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
     """
     scraped_data = []
     
+    # 1. Playwright-Instanz starten (wird hier als 'p' definiert)
     with sync_playwright() as p:
         status_callback("Starte Browser (Chromium)...", "info")
-        # In scraper.py dort, wo der Browser gestartet wird:
-        browser = playwright.chromium.launch(
+        
+        # 2. Browser über die Instanz 'p' aufrufen, NICHT über das Modul
+        browser = p.chromium.launch(
             headless=True,
             args=[
                 "--no-sandbox",
