@@ -14,12 +14,13 @@ def ensure_playwright_browsers():
     except ImportError:
         return
 
-    # Pfad zum Playwright-Cache prüfen
+    # Prüfen, ob Firefox im Cache liegt
     if os.environ.get("STREAMLIT_SERVER_SHARING_TEXT_ALLOWED") or not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
         try:
-            print("⏳ Installiere Playwright Chromium-Browser...")
-            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-            print("✅ Playwright Browser erfolgreich installiert!")
+            print("⏳ Installiere Playwright Firefox-Browser...")
+            # Wir installieren gezielt Firefox
+            subprocess.run([sys.executable, "-m", "playwright", "install", "firefox"], check=True)
+            print("✅ Playwright Firefox erfolgreich installiert!")
         except Exception as e:
             print(f"⚠️ Fehler bei der Browser-Installation: {e}")
             
@@ -71,20 +72,17 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
     scraped_data = []
     
     with sync_playwright() as p:
-        status_callback("Starte unsichtbaren Browser (Headless)...", "info")
-        browser = p.chromium.launch(
-            headless=True,  # 🚀 Ab jetzt dauerhaft unsichtbar!
+        status_callback("Starte unsichtbaren Browser (Firefox Headless)...", "info")
+        browser = p.firefox.launch(
+            headless=True,
             args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--single-process"
+                "--no-sandbox"
             ]
         )
-        
-        # Identifiziere dich als normaler Chrome-Browser, um Bot-Sperren zu vermeiden
+
+        # Der restliche Kontext- und Seitenaufruf bleibt exakt gleich!
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
             viewport={"width": 1440, "height": 900}
         )
         page = context.new_page()
