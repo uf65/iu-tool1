@@ -84,15 +84,32 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
             args=[
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu"
+                "--disable-dev-shm-usage",  # Erzwingt die Nutzung von /tmp statt Shared Memory (/dev/shm ist in der Cloud winzig)
+                "--disable-gpu",            # Deaktiviert Hardware-Beschleunigung vollständig
+                "--no-first-run",
+                "--no-zygote",              # Verhindert speicherintensive Hintergrundprozesse
+                "--single-process",         # Spart enorm viel RAM in Cloud-Containern
+                "--disable-extensions"
             ]
         )
-        context = browser.new_context()
+
+        # Wichtig: Dem Kontext einen gängigen User-Agent mitgeben, 
+        # damit das Portal den Headless-Browser nicht blockiert
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800}
+        )
+
         page = context.new_page()
-        
-        status_callback(f"Navigiere zu {url}...", "info")
-        page.goto(url)
+
+        # Erhöhe das Timeout für langsame Cloud-Netzwerke auf 60 Sekunden 
+        # und warte auf 'domcontentloaded' statt auf den schweren 'load'-Event (Bilder/Fonts)
+        try:
+            status_callback("Navigiere zu https://portal.iu.org...", "info")
+            page.goto(url, timeout=60000, wait_until="domcontentloaded")
+        except Exception as e:
+            # Falls es immer noch crasht, fangen wir es hier sauber ab für das Log
+            raise RuntimeError(f"Fehler beim Laden der Seite: {e}")
         
         # --- ZWISCHENSCHRITT: LOGIN-SEITE ERKENNEN ---
         status_callback("Prüfe Verbindung und warte auf das Laden der Login-Maske...", "info")
