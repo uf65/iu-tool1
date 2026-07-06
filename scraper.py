@@ -67,134 +67,78 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
             
     return page.locator(card_selector).count()
 
-def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[str, str], None]) -> List[Dict[str, Any]]:
-    """
-    Launches browser, verifies the login screen first, then waits for the user 
-    to log in and navigates to the job board.
-    """
+def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[str, str], None], iu_email: str, iu_password: str) -> List[Dict[str, Any]]:
     scraped_data = []
     
-    # 1. Playwright-Instanz starten (wird hier als 'p' definiert)
     with sync_playwright() as p:
-        status_callback("Starte Browser (Chromium)...", "info")
-        
-        # 2. Browser über die Instanz 'p' aufrufen, NICHT über das Modul
-        # In scraper.py innerhalb von: with sync_playwright() as p:
-
+        status_callback("Starte unsichtbaren Browser (Headless)...", "info")
         browser = p.chromium.launch(
-            headless=True,
+            headless=True,  # 🚀 Ab jetzt dauerhaft unsichtbar!
             args=[
-                # Grundlegende Cloud-Kompatibilität
                 "--no-sandbox",
-                "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
-                
-                # Speicher & Prozess-Limitierungen für Docker
-                "--single-process",
-                "--no-zygote",
-                "--disable-renderer-backgrounding",
-                "--disable-background-timer-throttling",
-                "--disable-backgrounding-occluded-windows",
-                
-                # Absturzsicherung & Audio/Video-Deaktivierung
-                "--disable-breakpad",  # Verhindert Absturz-Dumps, die den Container blockieren
-                "--disable-ipc-flooding-protection",
-                "--mute-audio",
-                
-                # Erzwinge reines Software-Rendering (wichtig ohne Display-Server)
-                "--use-gl=swiftshader" or "--use-gl=angle",
-                "--disable-software-rasterizer"
+                "--single-process"
             ]
         )
-
-        # Erstelle den Kontext und tarne ihn zwingend als echten Desktop-Browser
+        
+        # Identifiziere dich als normaler Chrome-Browser, um Bot-Sperren zu vermeiden
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={"width": 1440, "height": 900},
-            accept_downloads=False
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1440, "height": 900}
         )
-
         page = context.new_page()
-
-        # Optionale Absicherung: Setze Standard-Timeouts global auf dem Page-Objekt
-        page.set_default_timeout(60000)
-
+        page.set_default_timeout(30000) # 30 Sekunden Timeout für Aktionen
+        
         try:
-            status_callback("Navigiere zu https://portal.iu.org...", "info")
+            status_callback(f"Navigiere zum Portal und lade Login-Maske...", "info")
+            page.goto(url)
             
-            # Versuche "networkidle", falls die Seite extrem viel asynchrones JS lädt,
-            # oder bleibe bei "domcontentloaded". Wir fangen Timeouts gezielt ab.
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            # --- AUTOMATISCHER LOGIN ---
+            status_callback("🤖 Gebe Zugangsdaten automatisch ein...", "info")
             
-            # Kurze Atempause, damit JS-Inhalte nach dem Laden rendern können
-            page.wait_for_timeout(3000)
+            # 1. E-Mail eingeben (Sucht nach den typischen Auth0 oder Microsoft Feldern)
+            email_locator = page.locator('input[type="email"], input[name="loginfmt"], input[name="username"]').first
+            email_locator.wait_for(state="visible")
+            email_locator.fill(iu_email)
+            page.keyboard.press("Enter")
+            
+            # Kurze Pause, da Enterprise-Logins oft eine sanfte Überblendung haben
+            page.wait_for_timeout(2000)
+            
+            # 2. Passwort eingeben
+            pass_locator = page.locator('input[type="password"], input[name="passwd"]').first
+            pass_locator.wait_for(state="visible")
+            pass_locator.fill(iu_password)
+            page.keyboard.press("Enter")
+            
+            # 3. Optional: "Angemeldet bleiben?" (Microsoft spezifisch) abfangen
+            try:
+                stay_signed_in = page.locator('input[type="submit"][value="Ja"], input[type="submit"][id="idSIButton9"]').first
+                if stay_signed_in.is_visible(timeout=3000):
+                    stay_signed_in.click()
+            except Exception:
+                pass # Wenn die Abfrage nicht kommt, einfach weitermachen
+                
+            status_callback("Warte auf Authentifizierung und Weiterleitung zum Portal...", "info")
+            
+            # --- ERFOLGSPRÜFUNG ---
+            # Wir warten darauf, dass die URL auf /selfmatching wechselt ODER der Text Praxisort auftaucht
+            page.wait_for_function("window.location.href.includes('/selfmatching') || document.body.innerText.includes('Praxisort')", timeout=20000)
+            
+            card_count = page.locator(selectors['card']).count()
+            if card_count == 0:
+                card_count = page.locator("p:has-text('Praxisort')").count()
+                
+            status_callback(f"🎉 Auto-Login erfolgreich! {card_count} Stellenanzeigen identifiziert.", "complete")
             
         except Exception as e:
-            raise RuntimeError(f"Kritischer Verbindungsfehler auf der Seite: {e}")
-        
-        # --- ZWISCHENSCHRITT: LOGIN-SEITE ERKENNEN ---
-        status_callback("Prüfe Verbindung und warte auf das Laden der Login-Maske...", "info")
-        
-        login_mask_detected = False
-        while not login_mask_detected:
-            if page.is_closed():
-                status_callback("Browser wurde geschlossen. Abbruch.", "error")
-                return []
-                
-            try:
-                # Wir suchen nach der eindeutigen Logo-ID aus deinem HTML
-                logo_visible = page.locator("#prompt-logo-center").is_visible(timeout=500)
-                # Alternativ prüfen wir, ob die auth-URL aktiv ist
-                if logo_visible or "auth.iu.org" in page.url:
-                    login_mask_detected = True
-                    status_callback("✅ Verbindung erfolgreich! Die IU-Login-Maske wurde im Browser erkannt.", "info")
-                    break
-            except Exception:
-                pass
-            time.sleep(1)
-            
-        # --- PHASE 2: JETZT ERST LOGIN AUFFORDERN ---
-        status_callback("🔑 Bitte logge dich JETZT im Browserfenster ein und gehe zur Stellenliste.", "warning")
-        
-        logged_in = False
-        last_log_time = time.time()
-        
-        while not logged_in:
-            if page.is_closed():
-                status_callback("Browser wurde geschlossen. Scraping abgebrochen.", "error")
-                return []
-                
-            try:
-                # STRATEGIE-WECHSEL: Wir suchen nach dem Text 'Praxisort', 
-                # der auf JEDER Jobkarte existiert. Das durchbricht auch das Shadow-DOM!
-                target_element = page.locator("p:has-text('Praxisort')").first
-                
-                if target_element.is_visible(timeout=500):
-                    # Sicherheitshalber prüfen wir, ob wir wirklich auf der richtigen URL sind
-                    if "/selfmatching" in page.url:
-                        # Wir ermitteln die Anzahl der sichtbaren Karten über Playwrights internen Selektor
-                        card_count = page.locator(selectors['card']).count()
-                        
-                        # Falls der CSS-Selektor wegen Shadow-DOM 0 liefert, 
-                        # nutzen wir die Text-Locator als Fallback für die Anzahl
-                        if card_count == 0:
-                            card_count = page.locator("p:has-text('Praxisort')").count()
-                            
-                        logged_in = True
-                        status_callback(f"🎉 Login erfolgreich! {card_count} Stellenanzeigen im Portal identifiziert.", "info")
-                        break
-            except Exception:
-                pass
-                
-            if time.time() - last_log_time > 5:
-                status_callback("Warte auf Abschluss des Logins (Suche nach Jobkarten-Inhalten)...", "info")
-                last_log_time = time.time()
-                
-            time.sleep(1)
+            status_callback(f"Login fehlgeschlagen. Möglicherweise falsche Daten, 2FA-Abfrage oder Bot-Schutz aktiv. Fehler: {e}", "error")
+            browser.close()
+            return []
                         
         # 2. Liste vollständig expandieren
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(2000)
         total_cards = expand_job_list(page, selectors, status_callback)
         status_callback(f"Insgesamt {total_cards} Stellenanzeigen geladen. Starte Detail-Scraping...", "info")
         

@@ -107,6 +107,11 @@ else:
 # Sidebar - Settings
 with st.sidebar:
     st.image("https://www.iu.de/src/images/logos/iu-logo-white.svg", width=100)
+    
+    st.markdown("### 🔐 IU Login-Daten")
+    iu_email = st.text_input("IU E-Mail", placeholder="name@iu.de")
+    iu_password = st.text_input("Passwort", type="password")
+    
     st.markdown("### ⚙️ Konfiguration")
     url = st.text_input("Portal URL", value=config.get("url", "https://portal.iu.org"))
     selectors = config.get("selectors", {})
@@ -152,6 +157,10 @@ with col1:
     """)
     
     if st.button("🔍 Scraping starten", use_container_width=True):
+        if not iu_email or not iu_password:
+            st.error("⚠️ Bitte gib zuerst deine IU E-Mail und dein Passwort in der Sidebar ein!")
+            st.stop()
+            
         current_selectors = {
             "card": card, "title": title, "location": location, "campus": campus, "start_date": start_date,
             "detail_about": detail_about, "detail_offer": detail_offer, "detail_reqs": detail_reqs,
@@ -165,7 +174,7 @@ with col1:
                 else: status_box.write(f"ℹ️ {message}")
                     
             try:
-                scraped_jobs = scrape_jobs(url, current_selectors, log_callback)
+                scraped_jobs = scrape_jobs(url, current_selectors, log_callback, iu_email, iu_password)
                 
                 if scraped_jobs:
                     log_callback(f"Verarbeite und speichere {len(scraped_jobs)} Stellenanzeigen...", "info")
