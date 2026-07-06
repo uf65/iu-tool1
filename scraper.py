@@ -10,19 +10,15 @@ import sys
 # Prüfen, ob wir in der Streamlit Cloud sind und ob die Browser fehlen
 def ensure_playwright_browsers():
     try:
-        # Wir versuchen kurz, playwright zu importieren und zu prüfen
         from playwright.sync_api import sync_playwright
     except ImportError:
         return
 
-    # In der Streamlit Cloud setzen wir eine Umgebungsvariable, oder prüfen den Pfad
-    # Sicherstellen, dass Chromium installiert ist (wird nur ausgeführt, wenn nötig)
+    # Pfad zum Playwright-Cache prüfen
     if os.environ.get("STREAMLIT_SERVER_SHARING_TEXT_ALLOWED") or not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
         try:
-            print("⏳ Installiere Playwright Chromium-Browser in der Cloud...")
-            subprocess.run([sys.executable, "-m", "playwright", "install"], check=True)
-            # Installiert zusätzlich die Linux-Systemabhängigkeiten, falls packages.txt unvollständig war
-            #subprocess.run([sys.executable, "-m", "playwright", "install-deps", "chromium"], check=True)
+            print("⏳ Installiere Playwright Chromium-Browser...")
+            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
             print("✅ Playwright Browser erfolgreich installiert!")
         except Exception as e:
             print(f"⚠️ Fehler bei der Browser-Installation: {e}")
