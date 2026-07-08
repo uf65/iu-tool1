@@ -69,7 +69,7 @@ def load_config():
     return {
         "url": "https://portal.iu.org",
         "selectors": {
-            "card": "div.relative.cursor-pointer",
+            "card": "main .grid > div",
             
             # Der Gewinner-Titel aus dem Labor
             "title": "xpath=//p[contains(@class, 'text-xl') or contains(@class, 'text-2xl')]",
@@ -88,7 +88,7 @@ def load_config():
             "detail_reqs": "xpath=//*[contains(., 'Das bringst du mit') and not(.//*[contains(., 'Das bringst du mit')])]/following-sibling::div[1]",
             
             "back_button": "text=allen Stellenanzeigen",
-            "load_more_button": "text=mehr anzeigen"
+            "load_more_button": "button:has-text('Mehr anzeigen')"
         }
     }
             
@@ -215,12 +215,51 @@ if total_jobs > 0:
     with col_f3: f_camp = st.text_input("Filter nach Campus", "")
         
     df_filtered = df_jobs.copy()
+    
+    # 1. Sicherstellen, dass die Spalte 'Favorit' existiert (falls alte CSVs geladen werden)
+    if 'Favorit' not in df_filtered.columns:
+        df_filtered['Favorit'] = False
+    else:
+        # Sicherstellen, dass Python es als Boolean (True/False) liest
+        df_filtered['Favorit'] = df_filtered['Favorit'].astype(bool)
+
+    # 2. Filter anwenden
     if f_title: df_filtered = df_filtered[df_filtered['Titel'].str.contains(f_title, case=False, na=False)]
     if f_loc: df_filtered = df_filtered[df_filtered['Praxisort'].str.contains(f_loc, case=False, na=False)]
     if f_camp: df_filtered = df_filtered[df_filtered['Campus'].str.contains(f_camp, case=False, na=False)]
 
-    st.dataframe(df_filtered, use_container_width=True)
-    
+    # Spaltenanordnung optimieren: 'Favorit' als erste Spalte anzeigen
+    cols = ['Favorit'] + [col for col in df_filtered.columns if col != 'Favorit']
+    df_filtered = df_filtered[cols]
+
+    # 3. Interaktiver Data Editor statt st.dataframe
+    edited_df = st.data_editor(
+        df_filtered,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Favorit": st.column_config.CheckboxColumn(
+                "❤️ Shortlist",
+                help="Markiere diesen Job als Favorit",
+                default=False,
+            )
+        },
+        # Macht alle anderen Spalten uneditierbar, nur die Checkbox kann geklickt werden
+        disabled=[col for col in df_filtered.columns if col != 'Favorit']
+    )
+
+    # 4. Änderungen direkt in die Master-Daten (df_jobs) zurückschreiben & CSV aktualisieren
+    if not edited_df.equals(df_filtered):
+        # Wir gleichen die Änderungen anhand der 'Job-ID' mit dem Original-DataFrame ab
+        for idx, row in edited_df.iterrows():
+            job_id = row['Job-ID']
+            df_jobs.loc[df_jobs['Job-ID'] == job_id, 'Favorit'] = row['Favorit']
+        
+        # In CSV abspeichern, damit der Zustand beim nächsten App-Start erhalten bleibt
+        df_jobs.to_csv(CSV_FILE, index=False, encoding='utf-8-sig')
+        st.rerun() # App neu laden, um geänderte Datenbasis zu bestätigen
+
+    # 5. Download-Bereich
     col_d1, col_d2 = st.columns([1, 4])
     with col_d1:
         csv_data = df_jobs.to_csv(index=False, encoding='utf-8-sig')

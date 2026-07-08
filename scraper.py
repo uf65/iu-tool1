@@ -17,6 +17,11 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
     card_selector = selectors['card']
     load_more_selector = selectors['load_more_button']
     
+    try:
+        page.locator(card_selector).first.wait_for(state="attached", timeout=5000)
+    except Exception:
+        print("DEBUG: Keine Karte innerhalb von 5 Sekunden im DOM angehängt.")
+
     last_card_count = page.locator(card_selector).count()
     status_callback(f"Bisher {last_card_count} Stellenanzeigen geladen. Suche nach 'mehr anzeigen'...", "info")
     
@@ -24,11 +29,13 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
     while True:
         try:
             load_more_btn = page.locator(load_more_selector).first
+            print(f"DEBUG: load_more_btn ist sichtbar? {load_more_btn.is_visible(timeout=2000)}")
             if load_more_btn.is_visible(timeout=2000):
                 load_more_btn.click(force=True)
                 page.wait_for_timeout(2000)
                 
                 current_card_count = page.locator(card_selector).count()
+                print(f"DEBUG: {current_card_count} Karten gefunden.")
                 if current_card_count > last_card_count:
                     last_card_count = current_card_count
                     no_change_count = 0
@@ -57,6 +64,32 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
         page = context.new_page()
         
         status_callback(f"Navigiere zu {url}...", "info")
+
+        # Für lokales Chromium-Scraping (headless=False)
+        context = browser.new_context(
+            # Entweder komplett weglassen oder einen echten Chrome-String nutzen:
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            viewport={"width": 1440, "height": 900}
+        )
+        page = context.new_page()
+
+        # 🚀 Der abgehärtete Chromium Shadow-DOM-Hack
+        page.add_init_script("""
+            (function() {
+                const originalAttachShadow = Element.prototype.attachShadow;
+                Object.defineProperty(Element.prototype, 'attachShadow', {
+                    value: function(init) {
+                        // Erzwinge 'open', egal was das Portal anfordert
+                        return originalAttachShadow.call(this, Object.assign({}, init, { mode: 'open' }));
+                    },
+                    configurable: true,
+                    writable: true
+                });
+            })();
+        """)
+
+        page.set_default_timeout(30000)
+
         page.goto(url)
         
         # --- ZWISCHENSCHRITT: LOGIN-SEITE ERKENNEN ---
@@ -153,8 +186,16 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 location = get_text_safe(card, selectors['location'])
                 campus = get_text_safe(card, selectors['campus'])
                 start_date = get_text_safe(card, selectors['start_date'])
+
+                # Prüfen, ob das gefüllte Herz-Symbol im HTML der Karte existiert
+                has_filled_heart = card.locator("symbol#icon-heart-filled, path[fill='#3772FF']").count() > 0
+
+                # Herzsymbol für Status_callback
+                is_favorite = ""
+                if has_filled_heart:
+                    is_favorite = "⭐"
                 
-                status_callback(f"Stelle gefunden: '{title}' in {location} ({campus})", "info")
+                status_callback(f"Stelle gefunden: '{title}' in {location} ({campus}) {is_favorite}", " info")
                 
                 about, offer, reqs = "", "", ""
                 try:
@@ -195,7 +236,8 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 
                 scraped_data.append({
                     'Titel': title, 'Praxisort': location, 'Campus': campus, 'Studienstart': start_date,
-                    'Über die Stelle': about, 'Das bieten wir': offer, 'Das bringst du mit': reqs
+                    'Über die Stelle': about, 'Das bieten wir': offer, 'Das bringst du mit': reqs,
+                    "Favorit": True if has_filled_heart else False
                 })
                 
             except Exception as e:
