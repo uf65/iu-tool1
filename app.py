@@ -59,17 +59,17 @@ CONFIG_FILE = "config.json"
 CSV_FILE = "jobs.csv"
 
 def load_config():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
+    # if os.path.exists(CONFIG_FILE):
+    #     try:
+    #         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+    #             return json.load(f)
+    #     except Exception:
+    #         pass
     
     return {
         "url": "https://portal.iu.org",
         "selectors": {
-            "card": "main .grid > div",
+            "card": "div.relative.cursor-pointer",
             
             # Der Gewinner-Titel aus dem Labor
             "title": "xpath=//p[contains(@class, 'text-xl') or contains(@class, 'text-2xl')]",

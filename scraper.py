@@ -14,6 +14,17 @@ def get_text_safe(locator_parent, selector: str) -> str:
 
 def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]) -> int:
     """Clicks the 'mehr anzeigen' button repeatedly to load all job postings."""
+    
+    print("In expand:", id(page))
+    
+    print("=== expand_job_list ===")
+    print("page.url =", page.url)
+    print("selector =", selectors["card"])
+
+    print("cards:", page.locator(selectors["card"]).count())
+    print("relative:", page.locator("div.relative.cursor-pointer").count())
+    print("links:", page.locator("a[href^='/selfmatching/']").count())
+    
     card_selector = selectors['card']
     load_more_selector = selectors['load_more_button']
     
@@ -31,9 +42,22 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
             load_more_btn = page.locator(load_more_selector).first
             print(f"DEBUG: load_more_btn ist sichtbar? {load_more_btn.is_visible(timeout=2000)}")
             if load_more_btn.is_visible(timeout=2000):
-                load_more_btn.click(force=True)
-                page.wait_for_timeout(2000)
+                # load_more_btn.click(force=True)
+                # page.wait_for_timeout(2000)
                 
+                # current_card_count = page.locator(card_selector).count()
+                old_count = page.locator(card_selector).count()
+
+                load_more_btn.click()
+
+                page.wait_for_function(
+                    """([selector, oldCount]) => {
+                        return document.querySelectorAll(selector).length > oldCount;
+                    }""",
+                    arg=[card_selector, old_count],
+                    timeout=10000
+                )
+
                 current_card_count = page.locator(card_selector).count()
                 print(f"DEBUG: {current_card_count} Karten gefunden.")
                 if current_card_count > last_card_count:
@@ -60,8 +84,6 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
     with sync_playwright() as p:
         status_callback("Starte Browser (Chromium)...", "info")
         browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
         
         status_callback(f"Navigiere zu {url}...", "info")
 
@@ -154,7 +176,14 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                         
         # 2. Liste vollständig expandieren
         page.wait_for_timeout(1000)
+        print("relative:", page.locator("div.relative.cursor-pointer").count())
+        print("links:", page.locator("a[href^='/selfmatching/']").count())
+        print("title:", page.locator("p.text-xl").count())
+        print("Vor expand:", id(page))
+        print("Vor expand:", page.locator("div.relative.cursor-pointer").count())
         total_cards = expand_job_list(page, selectors, status_callback)
+        print("Nach expand:", page.locator("div.relative.cursor-pointer").count())
+
         status_callback(f"Insgesamt {total_cards} Stellenanzeigen geladen. Starte Detail-Scraping...", "info")
         
         # 3. Iteration durch die Karten
@@ -172,7 +201,13 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 
                 if current_count <= i:
                     status_callback(f"Liste wurde zurückgesetzt. Re-expandiere auf mindestens {i+1}...", "warning")
+                    print(f"({i}) relative:", page.locator("div.relative.cursor-pointer").count())
+                    print(f"({i}) links:", page.locator("a[href^='/selfmatching/']").count())
+                    print(f"({i}) title:", page.locator("p.text-xl").count())
+                    print("Vor expand:", id(page))
+                    print("Vor expand:", page.locator("div.relative.cursor-pointer").count())
                     expand_job_list(page, selectors, status_callback)
+                    print("Nach expand:", page.locator("div.relative.cursor-pointer").count())
                     cards = page.locator(selectors['card'])
                     current_count = cards.count()
                     if current_count <= i:
