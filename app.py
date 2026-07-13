@@ -56,13 +56,11 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 """, unsafe_allow_html=True)
 
 CONFIG_FILE = "config.json"
-CSV_FILE = "jobs.csv"
+CSV_FILE = "iu_jobs.csv"
 
 import os
 import pandas as pd
 import streamlit as st
-
-CSV_FILE = "iu_jobs.csv"
 
 # --- INITIALISIERUNG BEIM START ---
 # Prüfen, ob die CSV-Datei bereits existiert, und in den Session State laden
@@ -84,13 +82,7 @@ df_jobs = st.session_state.df_jobs
 total_jobs = len(df_jobs)
 
 def load_config():
-    # if os.path.exists(CONFIG_FILE):
-    #     try:
-    #         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-    #             return json.load(f)
-    #     except Exception:
-    #         pass
-    
+    """return default configuration"""    
     return {
         "url": "https://portal.iu.org",
         "selectors": {
@@ -207,6 +199,7 @@ with col1:
                     st.rerun()
                 else:
                     status_box.update(label="Scraping beendet (keine Daten extrahiert).", state="error")
+    
             except Exception as ex:
                 log_callback(f"Unerwarteter Fehler: {ex}", "error")
                 status_box.update(label="Scraping fehlgeschlagen.", state="error")
