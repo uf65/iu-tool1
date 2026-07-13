@@ -190,7 +190,7 @@ with col1:
                 else: status_box.write(f"ℹ️ {message}")
                     
             try:
-                scraped_jobs = scrape_jobs(url, current_selectors, log_callback)
+                scraped_jobs = scrape_jobs(url, current_selectors, log_callback, st.session_state.df_jobs)
                 
                 if scraped_jobs:
                     log_callback(f"Verarbeite und speichere {len(scraped_jobs)} Stellenanzeigen...", "info")

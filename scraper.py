@@ -1,6 +1,9 @@
 import time
 from typing import List, Dict, Any, Callable
+import pandas as pd
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+
+from data_manager import generate_job_id
 
 def get_text_safe(locator_parent, selector: str) -> str:
     """Safely retrieves inner text from a selector relative to a parent locator."""
@@ -123,11 +126,19 @@ def expand_job_list(page, selectors, status_callback: Callable[[str, str], None]
             
     return page.locator(card_selector).count()
 
-def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[str, str], None]) -> List[Dict[str, Any]]:
+def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[str, str], None], existing_df: pd.DataFrame = None) -> List[Dict[str, Any]]:
     """
     Launches browser, verifies the login screen first, then waits for the user 
     to log in and navigates to the job board.
     """
+    # Set aus bereits bekannten IDs erstellen, bei denen die Details vollständig sind
+    # (Wir nehmen an, dass ein vollständiger Job z.B. eine Beschreibung oder ein konkretes Datum hat)
+    known_complete_ids = set()
+    if existing_df is not None and not existing_df.empty and "Job-ID" in existing_df.columns:
+        # Nur Jobs betrachten, die keine leeren Detail-Spalten (z.B. Beschreibung) haben
+        complete_jobs = existing_df.dropna(subset=["Beschreibung"]) if "Beschreibung" in existing_df.columns else existing_df
+        known_complete_ids = set(complete_jobs["Job-ID"].astype(str).tolist())
+    
     scraped_data = []
     
     with sync_playwright() as p:
@@ -270,6 +281,9 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 location = get_text_safe(card, selectors['location'])
                 campus = get_text_safe(card, selectors['campus'])
                 start_date = get_text_safe(card, selectors['start_date'])
+                
+                # 3. Stabile Job-ID berechnen
+                job_id = generate_job_id(title, location, campus, start_date)
 
                 # Prüfen, ob das gefüllte Herz-Symbol im HTML der Karte existiert
                 has_filled_heart = card.locator("symbol#icon-heart-filled, path[fill='#3772FF']").count() > 0
@@ -278,8 +292,23 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
                 is_favorite = ""
                 if has_filled_heart:
                     is_favorite = "⭐"
-                
-                status_callback(f"Stelle gefunden: '{title}' in {location} ({campus}) {is_favorite}", " info")
+                    
+                # 4. INKREMENTELLER CHECK: Ist die ID bereits in der CSV vorhanden?
+                if job_id in known_complete_ids:
+                    status_callback(f"[{i+1}/{current_count}] Bekannt {is_favorite}: '{title}' ({location}) -> Detail-Scraping übersprungen.", "info")
+                    
+                    # Bestehende Zeile aus dem Dataframe extrahieren
+                    existing_row = existing_df[existing_df["Job-ID"].astype(str) == job_id].iloc[0].to_dict()
+                    
+                    # Wichtig: Falls der Nutzer im IU-Portal das Herz verändert hat,
+                    # aktualisieren wir diesen Status direkt live aus der Vorschaukarte!
+                    existing_row["Favorit"] = has_filled_heart
+                    
+                    scraped_data.append(existing_row)
+                    i += 1
+                    continue
+                    
+                status_callback(f"Neue Stelle gefunden: '{title}' in {location} ({campus}) {is_favorite}", " info")
                 
                 about, offer, reqs = "", "", ""
                 try:
