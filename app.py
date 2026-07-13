@@ -58,6 +58,31 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 CONFIG_FILE = "config.json"
 CSV_FILE = "jobs.csv"
 
+import os
+import pandas as pd
+import streamlit as st
+
+CSV_FILE = "iu_jobs.csv"
+
+# --- INITIALISIERUNG BEIM START ---
+# Prüfen, ob die CSV-Datei bereits existiert, und in den Session State laden
+if "df_jobs" not in st.session_state:
+    if os.path.exists(CSV_FILE):
+        try:
+            st.session_state.df_jobs = pd.read_csv(CSV_FILE)
+            # Sicherstellen, dass die Job-ID als String gelesen wird, um Hash-Vergleiche sauber zu halten
+            if "Job-ID" in st.session_state.df_jobs.columns:
+                st.session_state.df_jobs["Job-ID"] = st.session_state.df_jobs["Job-ID"].astype(str)
+        except Exception as e:
+            st.warning(f"Bestehende CSV konnte nicht gelesen werden: {e}")
+            st.session_state.df_jobs = pd.DataFrame()
+    else:
+        st.session_state.df_jobs = pd.DataFrame()
+
+# Lokale Referenz für die UI-Berechnung
+df_jobs = st.session_state.df_jobs
+total_jobs = len(df_jobs)
+
 def load_config():
     # if os.path.exists(CONFIG_FILE):
     #     try:
@@ -177,14 +202,15 @@ with col1:
                     
                     status_box.update(label=f"Scraping erfolgreich! {len(scraped_jobs)} Jobs importiert.", state="complete")
                     st.balloons()
+                    # Am Ende des erfolgreichen try-Blocks beim Scraping:
+                    st.session_state.df_jobs = pd.read_csv(CSV_FILE)
+                    st.rerun()
                 else:
                     status_box.update(label="Scraping beendet (keine Daten extrahiert).", state="error")
             except Exception as ex:
                 log_callback(f"Unerwarteter Fehler: {ex}", "error")
                 status_box.update(label="Scraping fehlgeschlagen.", state="error")
                 # st.stop() ENTFERNT – das blockiert die Streamlit-UI dauerhaft!
-        
-        # KEIN st.rerun() hier! Streamlit läuft automatisch bis zum Ende des Skripts weiter.
         
 with col2:
     st.markdown("### 📊 Statistiken")
