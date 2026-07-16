@@ -56,7 +56,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
 """, unsafe_allow_html=True)
 
 CONFIG_FILE = "config.json"
-CSV_FILE = "iu_jobs.csv"
+CSV_FILE = "data/iu_jobs.csv"
 
 import os
 import pandas as pd
