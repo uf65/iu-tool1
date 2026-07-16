@@ -138,11 +138,20 @@ def scrape_jobs(url: str, selectors: Dict[str, str], status_callback: Callable[[
             
             try:
                 # --- SCHRITT A: Login-Maske ausfüllen und abschicken ---
-                page.wait_for_selector(selectors.get('login_username_field', 'input[type="email"]'), timeout=10000)
+                # Wir warten nun auf die eindeutige ID '#username' statt auf 'input[type="email"]'
+                username_selector = selectors.get('login_username_field', '#username')
+                password_selector = selectors.get('login_password_field', '#password')
+                submit_selector = selectors.get('login_submit_button', 'button[type="submit"]')
+
+                status_callback(f"Warte auf Login-Feld ({username_selector})...", "info")
+                page.wait_for_selector(username_selector, timeout=10000)
                 
-                page.fill(selectors.get('login_username_field', 'input[type="email"]'), username)
-                page.fill(selectors.get('login_password_field', 'input[type="password"]'), password)
-                page.click(selectors.get('login_submit_button', 'button[type="submit"]'))
+                # Felder ausfüllen
+                page.fill(username_selector, username)
+                page.fill(password_selector, password)
+                
+                # Abschicken (Das IU-Portal nutzt typischerweise ein Standard-Submit-Button)
+                page.click(submit_selector)
                 
                 status_callback("Login-Daten abgeschickt. Warte auf das Dashboard...", "info")
                 
